@@ -1,0 +1,5 @@
+.env
+transcript.jsonl
+__pycache__/
+*.pyc
+.venv/
