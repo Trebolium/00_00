@@ -3,7 +3,6 @@ import asyncio
 from . import transcript
 from .asr import transcribe
 from .audio_io import Mic, Speaker
-from .echo_cancel import EchoCanceller
 from .llm import respond
 from .tts import synthesize
 
@@ -35,6 +34,8 @@ async def run_cycle(mic: Mic, speaker: Speaker, history: list[dict]):
     """Record one utterance, then race it against a barge-in so a new utterance can cut it off."""
     first_frame = await asyncio.to_thread(mic.wait_for_speech)
     pcm = await asyncio.to_thread(mic.record_utterance, first_frame)
+    if pcm is None:
+        return  # too little voiced content to be real speech (e.g. a cough) -- keep listening
 
     turn = asyncio.create_task(handle_turn(pcm, speaker, history))
     barge_in = asyncio.create_task(asyncio.to_thread(mic.wait_for_barge_in))
@@ -47,9 +48,12 @@ async def run_cycle(mic: Mic, speaker: Speaker, history: list[dict]):
 
 
 async def main():
-    canceller = EchoCanceller()
-    mic = Mic(echo_canceller=canceller)
-    speaker = Speaker(echo_canceller=canceller)
+    # No EchoCanceller here: it proved unstable in practice (diverged to saturating,
+    # fabricated output even when raw mic input was near-silent) and this setup's raw
+    # mic levels during TTS playback are low enough that it isn't needed. See
+    # echo_cancel.py's docstring and README for details if revisiting this.
+    mic = Mic()
+    speaker = Speaker()
     mic.start()
     history = [SYSTEM_PROMPT]
 

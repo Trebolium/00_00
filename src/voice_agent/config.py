@@ -16,6 +16,7 @@ FRAME_MS = 20  # webrtcvad only accepts 10/20/30ms frames
 VAD_AGGRESSIVENESS = 2  # 0-3, higher = more aggressive about filtering non-speech
 TRAILING_SILENCE_MS = 700  # silence needed to end an utterance
 MAX_UTTERANCE_MS = 15000  # hard cap so sustained noise/echo can't make record_utterance hang forever
+MIN_UTTERANCE_MS = 300  # minimum total voiced content for an utterance to be sent to ASR, not a cough/blip
 BARGE_IN_MS = 300  # sustained voiced audio needed to count as a real interruption, not mic-picked-up echo
 
 ECHO_FILTER_MS = 150  # how much echo-path delay/reverb the NLMS canceller can model

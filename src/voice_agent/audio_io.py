@@ -10,6 +10,7 @@ from .config import (
     BARGE_IN_MS,
     FRAME_MS,
     MAX_UTTERANCE_MS,
+    MIN_UTTERANCE_MS,
     SAMPLE_RATE,
     TRAILING_SILENCE_MS,
     VAD_AGGRESSIVENESS,
@@ -88,16 +89,28 @@ class Mic:
         """Record from first_frame until trailing silence closes the utterance, or a max duration is hit.
 
         The max-duration cap exists so sustained noise/echo that keeps reading as
-        "voiced" (silence never arriving) can't make this loop hang forever.
+        "voiced" (silence never arriving) can't make this loop hang forever. Returns
+        None if the utterance's total voiced content is too brief to be real speech
+        (e.g. a cough or throat-clear) -- the recording always includes several
+        hundred ms of trailing silence by construction, so total length alone can't
+        distinguish a blip from real speech; voiced-frame count can.
         """
         silence_needed = TRAILING_SILENCE_MS // FRAME_MS
         max_frames = MAX_UTTERANCE_MS // FRAME_MS
+        min_voiced_frames = MIN_UTTERANCE_MS // FRAME_MS
         buf = [first_frame]
+        voiced_count = 1  # first_frame is always voiced -- that's why wait_for_speech returned it
         silence_run = 0
         while silence_run < silence_needed and len(buf) < max_frames:
             frame, voiced = self._frames.get()
             buf.append(frame)
-            silence_run = 0 if voiced else silence_run + 1
+            if voiced:
+                voiced_count += 1
+                silence_run = 0
+            else:
+                silence_run += 1
+        if voiced_count < min_voiced_frames:
+            return None
         return b"".join(buf)
 
     def wait_for_barge_in(self):

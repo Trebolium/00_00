@@ -59,6 +59,22 @@ def test_recovers_from_a_prior_divergence_instead_of_propagating_nan():
     assert np.isfinite(residual2).all()
 
 
+def test_recovers_from_large_but_finite_saturation_not_caught_by_isfinite():
+    # weights that are individually within the clip bound can still combine, across
+    # FILTER_TAPS taps, into a wildly saturating prediction -- this reproduces exactly
+    # that (no single value is NaN/Inf, so an isfinite()-only check would miss it).
+    canceller = EchoCanceller()
+    canceller._weights[:] = 5.0
+    canceller.push_reference(np.full(FILTER_TAPS, 2000, dtype=np.int16), sample_rate=config.SAMPLE_RATE)
+    mic_frame = np.zeros(320, dtype=np.int16)
+
+    residual = canceller.process(mic_frame)
+
+    assert np.isfinite(residual).all()
+    assert np.array_equal(residual, mic_frame)  # falls back to passthrough
+    assert np.all(canceller._weights == 0)  # reset, even though no individual weight was NaN/Inf
+
+
 def test_weights_stay_within_the_clip_bound_under_sustained_loud_input():
     canceller = EchoCanceller()
     loud = np.full(320, 32767, dtype=np.int16)

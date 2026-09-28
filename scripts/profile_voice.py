@@ -37,6 +37,24 @@ def frame_rms_series(audio: np.ndarray) -> np.ndarray:
     return np.array([frame_rms(trimmed[i : i + FRAME_SAMPLES].tobytes()) for i in range(0, len(trimmed), FRAME_SAMPLES)])
 
 
+def derive_threshold(noise_rms: np.ndarray, speech_rms: np.ndarray):
+    """Derive an energy threshold, or None if the calibration looks contaminated.
+
+    Uses a 90th-percentile noise ceiling rather than mean + std, since a single loud
+    outlier during the "stay quiet" step (a cough, a chair creak) badly inflates a
+    mean/std-based estimate but barely moves a percentile.
+    """
+    noise_ceiling = float(np.percentile(noise_rms, 90))
+    speech_median = float(np.median(speech_rms))
+    if noise_ceiling >= speech_median:
+        return None
+    return {
+        "energy_threshold": (noise_ceiling + speech_median) / 2,
+        "noise_ceiling": noise_ceiling,
+        "speech_median": speech_median,
+    }
+
+
 def main():
     print("Calibrating your voice profile for energy-gated VAD.")
     print("Step 1/2: stay quiet for 3 seconds (measuring background noise)...")
@@ -49,24 +67,19 @@ def main():
     speech = record_seconds(6)
     print("Got it.")
 
-    noise_rms = frame_rms_series(noise)
-    speech_rms = frame_rms_series(speech)
+    result = derive_threshold(frame_rms_series(noise), frame_rms_series(speech))
+    if result is None:
+        print(
+            "Calibration looks off: background noise was as loud as or louder than your "
+            "typical speech (something loud probably happened during the 'stay quiet' step). "
+            "Not saving -- please try again somewhere quieter."
+        )
+        return
 
-    # threshold sits between the noise floor's upper range and the user's typical speaking energy
-    noise_ceiling = float(np.mean(noise_rms) + 2 * np.std(noise_rms))
-    speech_median = float(np.median(speech_rms))
-    threshold = (noise_ceiling + speech_median) / 2
-    threshold = max(threshold, noise_ceiling)  # never below the noise ceiling itself
-
-    profile = {
-        "energy_threshold": threshold,
-        "noise_ceiling": noise_ceiling,
-        "speech_median": speech_median,
-        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
+    profile = {**result, "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     out_path = Path(VOICE_PROFILE_PATH)
     out_path.write_text(json.dumps(profile, indent=2))
-    print(f"Saved threshold={threshold:.1f} to {out_path}")
+    print(f"Saved threshold={result['energy_threshold']:.1f} to {out_path}")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,10 @@ FILTER_TAPS = int(SAMPLE_RATE * ECHO_FILTER_MS / 1000)
 _EPSILON = 1e-6  # avoids divide-by-zero when the reference is silent
 _LEAKAGE = 0.9999  # slowly decays weights toward zero, bounding long-term drift
 _WEIGHT_CLIP = 10.0  # hard safety bound; a real echo-path gain never needs to exceed this
+_MAX_SANE_ERROR = 20000  # well above real audio's dynamic range; anything past this is a diverging filter,
+# not real signal -- individually-clipped weights can still combine (dot product across
+# FILTER_TAPS taps) into a large-but-finite prediction that saturates the output without
+# any single value ever being NaN/Inf, so isfinite() alone doesn't catch this case.
 
 
 def _resample(samples: np.ndarray, orig_rate: int, target_rate: int) -> np.ndarray:
@@ -28,8 +32,12 @@ class EchoCanceller:
     the speaker -- via push_reference(). This isn't a production-grade AEC (no delay
     estimation, no double-talk detection): it's just enough to stop the mic hearing its
     own TTS output as a false barge-in. Includes basic stability safeguards (weight
-    leakage, clipping, NaN/Inf self-heal) since a hand-rolled adaptive filter running on
-    real speech can occasionally diverge.
+    leakage, clipping, self-heal on NaN/Inf or large-but-finite saturation) since a
+    hand-rolled adaptive filter running on real speech can occasionally diverge.
+
+    Not currently wired up in main.py -- it proved unstable enough in practice
+    (diverged to saturating output even when raw mic input was near-silent) that it's
+    disabled by default. See the README's "Known simplifications" section.
     """
 
     def __init__(self):
@@ -60,9 +68,9 @@ class EchoCanceller:
             predicted = windows @ self._weights
             error = mic_frame.astype(np.float64) - predicted
 
-            if not np.isfinite(error).all():
+            if not np.isfinite(error).all() or np.abs(error).max() > _MAX_SANE_ERROR:
                 # weights from a prior unstable update have poisoned this frame's
-                # prediction -- reset to a safe state instead of returning NaN forever.
+                # prediction -- reset to a safe state instead of returning garbage forever.
                 self._weights = np.zeros(FILTER_TAPS)
                 return mic_frame
 

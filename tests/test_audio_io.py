@@ -52,7 +52,8 @@ def test_wait_for_speech_skips_silence_and_returns_first_voiced_frame():
     assert mic.wait_for_speech() == b"voice-1"
 
 
-def test_record_utterance_stops_after_trailing_silence():
+def test_record_utterance_stops_after_trailing_silence(monkeypatch):
+    monkeypatch.setattr(audio_io, "MIN_UTTERANCE_MS", 0)  # this test isn't about the min-duration gate
     mic = make_mic()
     frame_ms = audio_io.FRAME_MS
     silence_frames_needed = audio_io.TRAILING_SILENCE_MS // frame_ms
@@ -70,7 +71,8 @@ def test_record_utterance_stops_after_trailing_silence():
     assert mic._frames.qsize() == 1  # the trailing extra frame is left untouched
 
 
-def test_record_utterance_resets_silence_run_on_interleaved_voice():
+def test_record_utterance_resets_silence_run_on_interleaved_voice(monkeypatch):
+    monkeypatch.setattr(audio_io, "MIN_UTTERANCE_MS", 0)  # this test isn't about the min-duration gate
     mic = make_mic()
     frame_ms = audio_io.FRAME_MS
     silence_frames_needed = audio_io.TRAILING_SILENCE_MS // frame_ms
@@ -85,6 +87,35 @@ def test_record_utterance_resets_silence_run_on_interleaved_voice():
     pcm = mic.record_utterance(first_frame=b"voice-1")
 
     assert b"voice-again" in pcm
+
+
+def test_record_utterance_returns_none_for_a_brief_non_speech_blip():
+    mic = make_mic()
+    silence_needed = audio_io.TRAILING_SILENCE_MS // audio_io.FRAME_MS
+
+    # only the single first_frame is voiced (e.g. a cough) -- everything after is silence
+    for i in range(silence_needed):
+        mic._frames.put((f"silence-{i}".encode(), False))
+
+    pcm = mic.record_utterance(first_frame=b"cough")
+
+    assert pcm is None
+
+
+def test_record_utterance_returns_bytes_for_sustained_real_speech():
+    mic = make_mic()
+    silence_needed = audio_io.TRAILING_SILENCE_MS // audio_io.FRAME_MS
+    min_voiced_frames = audio_io.MIN_UTTERANCE_MS // audio_io.FRAME_MS
+
+    for i in range(min_voiced_frames):  # enough sustained voice to clear the minimum
+        mic._frames.put((f"voice-{i}".encode(), True))
+    for i in range(silence_needed):
+        mic._frames.put((f"silence-{i}".encode(), False))
+
+    pcm = mic.record_utterance(first_frame=b"voice-first")
+
+    assert pcm is not None
+    assert b"voice-first" in pcm
 
 
 def test_record_utterance_stops_at_max_duration_even_without_silence(monkeypatch):
