@@ -22,6 +22,16 @@ def fake_sounddevice(monkeypatch):
     monkeypatch.setattr(audio_io.sd, "InputStream", _FakeInputStream)
 
 
+@pytest.fixture(autouse=True)
+def no_real_voice_profile(monkeypatch, tmp_path):
+    # Mic() must not pick up a real voice_profile.json from disk (e.g. if someone
+    # actually ran calibration in this repo). Only patches the no-arg default path --
+    # tests calling load_energy_threshold(path) with an explicit path are unaffected.
+    original = audio_io.load_energy_threshold
+    missing_path = str(tmp_path / "no_profile_here.json")
+    monkeypatch.setattr(audio_io, "load_energy_threshold", lambda path=missing_path: original(path))
+
+
 def make_mic():
     return audio_io.Mic()
 
@@ -77,17 +87,56 @@ def test_record_utterance_resets_silence_run_on_interleaved_voice():
     assert b"voice-again" in pcm
 
 
-def test_callback_sets_barge_in_event_only_when_armed():
+def test_record_utterance_stops_at_max_duration_even_without_silence(monkeypatch):
+    monkeypatch.setattr(audio_io, "MAX_UTTERANCE_MS", 100)  # small cap so the test stays fast
+    mic = make_mic()
+    max_frames = audio_io.MAX_UTTERANCE_MS // audio_io.FRAME_MS
+
+    # continuously voiced, never silent -- would hang forever without the cap
+    for i in range(max_frames + 50):
+        mic._frames.put((f"voice-{i}".encode(), True))
+
+    mic.record_utterance(first_frame=b"voice-first")
+
+    # consumed exactly max_frames-1 (first_frame already counts as 1), leaving the rest untouched
+    assert mic._frames.qsize() == 51
+
+
+def test_callback_ignores_brief_blips_but_fires_after_sustained_voice():
     mic = make_mic()
     monkeypatch_vad_is_speech(mic, voiced=True)
-
+    frames_needed = audio_io.BARGE_IN_MS // audio_io.FRAME_MS
     indata = np.zeros(audio_io.FRAME_SAMPLES, dtype=np.int16)
+
     mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)
     assert not mic._speech_started.is_set()  # not armed yet
 
     mic._barge_armed = True
+    for _ in range(frames_needed - 1):
+        mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)
+    assert not mic._speech_started.is_set()  # a brief blip (e.g. mic-picked-up echo) isn't enough
+
     mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)
-    assert mic._speech_started.is_set()
+    assert mic._speech_started.is_set()  # sustained voice does trigger it
+
+
+def test_callback_resets_run_on_interleaved_silence():
+    mic = make_mic()
+    frames_needed = audio_io.BARGE_IN_MS // audio_io.FRAME_MS
+    indata = np.zeros(audio_io.FRAME_SAMPLES, dtype=np.int16)
+    mic._barge_armed = True
+
+    monkeypatch_vad_is_speech(mic, voiced=True)
+    for _ in range(frames_needed - 1):
+        mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)
+
+    monkeypatch_vad_is_speech(mic, voiced=False)
+    mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)  # one silent frame resets the run
+
+    monkeypatch_vad_is_speech(mic, voiced=True)
+    for _ in range(frames_needed - 1):
+        mic._callback(indata, audio_io.FRAME_SAMPLES, None, None)
+    assert not mic._speech_started.is_set()  # still short of a full sustained run after the reset
 
 
 def test_wait_for_barge_in_unblocks_when_event_set():
@@ -126,6 +175,61 @@ def test_speaker_stop_halts_playback_before_all_chunks_are_written(monkeypatch):
     speaker.play(pcm, sample_rate=16000)
 
     assert len(written_chunks) == 1  # stopped after the first chunk, not all of them
+
+
+def test_frame_rms_computes_root_mean_square():
+    silent = np.zeros(10, dtype=np.int16).tobytes()
+    assert audio_io.frame_rms(silent) == 0.0
+
+    loud = (np.ones(4, dtype=np.int16) * 3).tobytes()  # rms of [3,3,3,3] == 3
+    assert audio_io.frame_rms(loud) == pytest.approx(3.0)
+
+
+def test_load_energy_threshold_missing_file_returns_none(tmp_path):
+    missing = tmp_path / "no_such_profile.json"
+    assert audio_io.load_energy_threshold(str(missing)) is None
+
+
+def test_load_energy_threshold_reads_saved_value(tmp_path):
+    profile = tmp_path / "voice_profile.json"
+    profile.write_text('{"energy_threshold": 250.0}')
+    assert audio_io.load_energy_threshold(str(profile)) == 250.0
+
+
+def test_callback_falls_back_to_vad_only_when_no_energy_threshold():
+    mic = make_mic()
+    mic._energy_threshold = None
+    monkeypatch_vad_is_speech(mic, voiced=True)
+
+    quiet_frame = np.zeros(audio_io.FRAME_SAMPLES, dtype=np.int16)  # rms == 0, would fail any threshold
+    mic._callback(quiet_frame, audio_io.FRAME_SAMPLES, None, None)
+
+    _, voiced = mic._frames.get_nowait()
+    assert voiced is True
+
+
+def test_callback_rejects_quiet_frame_that_passes_vad():
+    mic = make_mic()
+    mic._energy_threshold = 1000.0
+    monkeypatch_vad_is_speech(mic, voiced=True)  # VAD says speech, but frame is too quiet
+
+    quiet_frame = np.zeros(audio_io.FRAME_SAMPLES, dtype=np.int16)
+    mic._callback(quiet_frame, audio_io.FRAME_SAMPLES, None, None)
+
+    _, voiced = mic._frames.get_nowait()
+    assert voiced is False
+
+
+def test_callback_accepts_frame_passing_both_vad_and_energy():
+    mic = make_mic()
+    mic._energy_threshold = 1000.0
+    monkeypatch_vad_is_speech(mic, voiced=True)
+
+    loud_frame = np.full(audio_io.FRAME_SAMPLES, 5000, dtype=np.int16)
+    mic._callback(loud_frame, audio_io.FRAME_SAMPLES, None, None)
+
+    _, voiced = mic._frames.get_nowait()
+    assert voiced is True
 
 
 def test_speaker_play_is_noop_for_empty_audio(monkeypatch):

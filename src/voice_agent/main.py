@@ -3,6 +3,7 @@ import asyncio
 from . import transcript
 from .asr import transcribe
 from .audio_io import Mic, Speaker
+from .echo_cancel import EchoCanceller
 from .llm import respond
 from .tts import synthesize
 
@@ -46,8 +47,9 @@ async def run_cycle(mic: Mic, speaker: Speaker, history: list[dict]):
 
 
 async def main():
-    mic = Mic()
-    speaker = Speaker()
+    canceller = EchoCanceller()
+    mic = Mic(echo_canceller=canceller)
+    speaker = Speaker(echo_canceller=canceller)
     mic.start()
     history = [SYSTEM_PROMPT]
 

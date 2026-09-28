@@ -1,5 +1,6 @@
 .env
 transcript.jsonl
+voice_profile.json
 __pycache__/
 *.pyc
 .venv/

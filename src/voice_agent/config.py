@@ -15,5 +15,11 @@ SAMPLE_RATE = 16000  # mic capture rate, required by webrtcvad
 FRAME_MS = 20  # webrtcvad only accepts 10/20/30ms frames
 VAD_AGGRESSIVENESS = 2  # 0-3, higher = more aggressive about filtering non-speech
 TRAILING_SILENCE_MS = 700  # silence needed to end an utterance
+MAX_UTTERANCE_MS = 15000  # hard cap so sustained noise/echo can't make record_utterance hang forever
+BARGE_IN_MS = 300  # sustained voiced audio needed to count as a real interruption, not mic-picked-up echo
+
+ECHO_FILTER_MS = 150  # how much echo-path delay/reverb the NLMS canceller can model
+ECHO_STEP_SIZE = 0.15  # NLMS adaptation rate (0-1]; higher = faster but less stable
 
 TRANSCRIPT_PATH = os.getenv("TRANSCRIPT_PATH", "transcript.jsonl")
+VOICE_PROFILE_PATH = os.getenv("VOICE_PROFILE_PATH", "voice_profile.json")  # per-user RMS calibration, see scripts/profile_voice.py
