@@ -1,6 +1,6 @@
 # voice-agent
 
-A minimal voice-conversation loop: mic -> Groq Whisper (ASR) -> OpenRouter LLM -> LiveKit ElevenLabs TTS -> speaker, with barge-in support and a running transcript.
+A minimal voice-conversation loop: mic -> Groq Whisper (ASR) -> OpenRouter LLM -> ElevenLabs TTS -> speaker, with barge-in support and a running transcript.
 
 ## How it works
 
@@ -30,18 +30,38 @@ Each pipeline stage is one file with a single function/class, so any stage can b
 - `audio_io.py` — `Mic` and `Speaker`. Swap for a different audio backend.
 - `asr.py` — Currently Groq's free Whisper endpoint.
 - `llm.py` — Currently OpenRouter (`google/gemini-3-pro-preview` by default), via the OpenAI-compatible client. Change `LLM_MODEL` in `.env` to use a different model, or point `base_url` elsewhere entirely.
-- `tts.py` — Currently the LiveKit Agents ElevenLabs plugin (`livekit.plugins.elevenlabs`), used standalone (no LiveKit room/server needed).
+- `tts.py` — Currently a direct call to ElevenLabs' REST API (no SDK).
 - `transcript.py` — Currently a local JSONL file.
 
 ## Setup (local, with uv)
 
-Requires **Python 3.10+** (`livekit-agents` uses `typing.TypeAlias`); this repo is pinned to 3.12 via `.python-version`.
+Requires **Python 3.10+**; this repo is pinned to 3.12 via `.python-version`.
 
 ```bash
 uv sync                    # creates .venv and installs everything from uv.lock
 cp .env.example .env       # fill in GROQ_API_KEY, OPENROUTER_API_KEY, ELEVEN_API_KEY
 uv run voice-agent
 ```
+
+### Secrets via macOS Keychain (alternative to `.env`)
+
+Instead of a plaintext `.env` file, you can store the three keys in Keychain and pull them into the process at run time:
+
+```bash
+security add-generic-password -a "$USER" -s groq-api-key -w "<value>"
+security add-generic-password -a "$USER" -s openrouter-api-key -w "<value>"
+security add-generic-password -a "$USER" -s eleven-api-key -w "<value>"
+
+./scripts/run.sh   # looks the keys up and execs `uv run voice-agent`
+```
+
+## Testing
+
+```bash
+uv run pytest
+```
+
+Every external boundary (Groq, OpenRouter, ElevenLabs, PortAudio) is mocked, so the suite needs no real credentials, network access, or audio hardware — the dummy keys in `tests/conftest.py` just let the modules import.
 
 ## Docker
 
@@ -56,4 +76,4 @@ Note: this app talks to a real microphone and speaker (`sounddevice`/PortAudio o
 
 - Barge-in cancels the in-flight ASR/LLM task, but a blocking network call already running in a worker thread can't be forcibly killed — it finishes in the background and its result is just discarded. Playback itself *is* stopped immediately (`Speaker.stop()`).
 - VAD endpointing (`TRAILING_SILENCE_MS` in `config.py`) is a fixed silence timeout, not adaptive.
-- Single-user, single-process, local mic/speaker only — no networking/rooms involved despite using a LiveKit plugin for TTS.
+- Single-user, single-process, local mic/speaker only.

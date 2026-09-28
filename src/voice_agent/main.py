@@ -1,9 +1,10 @@
 import asyncio
 
-from . import transcript, tts
+from . import transcript
 from .asr import transcribe
 from .audio_io import Mic, Speaker
 from .llm import respond
+from .tts import synthesize
 
 SYSTEM_PROMPT = {
     "role": "system",
@@ -25,7 +26,7 @@ async def handle_turn(pcm: bytes, speaker: Speaker, history: list[dict]):
     transcript.append("assistant", reply)
     history.append({"role": "assistant", "content": reply})
 
-    pcm_out, sample_rate = await tts.synthesize(reply)
+    pcm_out, sample_rate = await asyncio.to_thread(synthesize, reply)
     await asyncio.to_thread(speaker.play, pcm_out, sample_rate)
 
 
