@@ -1,7 +1,7 @@
 import json
 import time
 
-from config import TRANSCRIPT_PATH
+from .config import TRANSCRIPT_PATH
 
 
 def append(role: str, text: str):

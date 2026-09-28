@@ -1,0 +1,9 @@
+.venv
+.git
+.github
+__pycache__
+*.pyc
+.env
+transcript.jsonl
+README.md
+CLAUDE.md

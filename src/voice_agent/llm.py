@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-from config import LLM_MODEL, OPENROUTER_API_KEY
+from .config import LLM_MODEL, OPENROUTER_API_KEY
 
 _client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
 

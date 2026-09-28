@@ -3,7 +3,7 @@ import wave
 
 from groq import Groq
 
-from config import GROQ_API_KEY, SAMPLE_RATE
+from .config import GROQ_API_KEY, SAMPLE_RATE
 
 _client = Groq(api_key=GROQ_API_KEY)
 

@@ -1,7 +1,7 @@
 import numpy as np
 from livekit.plugins import elevenlabs
 
-from config import ELEVEN_API_KEY, TTS_VOICE_ID
+from .config import ELEVEN_API_KEY, TTS_VOICE_ID
 
 _tts = elevenlabs.TTS(api_key=ELEVEN_API_KEY, voice_id=TTS_VOICE_ID)
 

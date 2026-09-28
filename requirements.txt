@@ -1,9 +1,0 @@
-sounddevice
-numpy
-webrtcvad
-setuptools<81  # webrtcvad imports pkg_resources, removed in newer setuptools
-python-dotenv
-groq
-openai
-livekit-agents
-livekit-plugins-elevenlabs

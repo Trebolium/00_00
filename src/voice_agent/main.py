@@ -1,10 +1,9 @@
 import asyncio
 
-import tts
-import transcript
-from asr import transcribe
-from audio_io import Mic, Speaker
-from llm import respond
+from . import transcript, tts
+from .asr import transcribe
+from .audio_io import Mic, Speaker
+from .llm import respond
 
 SYSTEM_PROMPT = {
     "role": "system",
@@ -56,5 +55,9 @@ async def main():
         await run_cycle(mic, speaker, history)
 
 
-if __name__ == "__main__":
+def run():
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()

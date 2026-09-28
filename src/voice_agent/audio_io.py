@@ -5,7 +5,7 @@ import numpy as np
 import sounddevice as sd
 import webrtcvad
 
-from config import FRAME_MS, SAMPLE_RATE, TRAILING_SILENCE_MS, VAD_AGGRESSIVENESS
+from .config import FRAME_MS, SAMPLE_RATE, TRAILING_SILENCE_MS, VAD_AGGRESSIVENESS
 
 FRAME_SAMPLES = int(SAMPLE_RATE * FRAME_MS / 1000)
 
